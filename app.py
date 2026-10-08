@@ -9,16 +9,26 @@ from stable_baselines3 import PPO
 import streamlit as st
 import shutil
 
-# Define the base Environment
+# 1. MUST BE FIRST STREAMLIT COMMAND
+st.set_page_config(layout="wide")
+
+# Force Dark UI Theme using CSS
+st.markdown(
+    """<style>
+    .stApp { background-color: #0E1117; color: #FAFAFA; }
+    div[data-testid="stExpander"] { background-color: #161B22; border: 1px solid #30363D; border-radius: 8px; }
+    div[data-testid="stSidebar"] { background-color: #161B22; }
+    </style>""", 
+    unsafe_allow_html=True
+)
+
+# 2. FIXED ENVIRONMENT CLASS (Handles missing files dynamically)
 class TrackEnv(gym.Env):
     def __init__(self, track_path='custom_track.png'):
         super(TrackEnv, self).__init__()
-        img = cv2.imread(track_path, cv2.IMREAD_GRAYSCALE)
-        if img is None:
-            img = np.zeros((400, 400), dtype=np.uint8)
-            cv2.circle(img, (200, 200), 120, 255, thickness=40)
-        _, self.track = cv2.threshold(img, 127, 1, cv2.THRESH_BINARY)
-        self.height, self.width = self.track.shape
+        self.track_path = track_path
+        self._load_track()
+        
         self.action_space = spaces.Discrete(4)
         self.observation_space = spaces.Box(low=0, high=1, shape=(6,), dtype=np.float32)
         self.visited_cells = set()
@@ -29,9 +39,18 @@ class TrackEnv(gym.Env):
         self.friction_factor = 0.03
         self.max_speed = 5.0
         self.turn_rate = 0.08
+        
+    def _load_track(self):
+        img = cv2.imread(self.track_path, cv2.IMREAD_GRAYSCALE)
+        if img is None:
+            img = np.zeros((400, 400), dtype=np.uint8)
+            cv2.circle(img, (200, 200), 120, 255, thickness=40)
+        _, self.track = cv2.threshold(img, 127, 1, cv2.THRESH_BINARY)
+        self.height, self.width = self.track.shape
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
+        self._load_track()  # Reload track state dynamically when resetting
         y_indices, x_indices = np.where(self.track == 1)
         if len(y_indices) == 0:
             self.car_x = float(self.width // 2)
@@ -50,9 +69,7 @@ class TrackEnv(gym.Env):
         for distance in range(1, 100):
             check_x = int(self.car_x + dx * distance)
             check_y = int(self.car_y + dy * distance)
-            if (check_x < 0 or check_x >= self.width or
-                check_y < 0 or check_y >= self.height or
-                self.track[check_y, check_x] == 0):
+            if (check_x < 0 or check_x >= self.width or check_y < 0 or check_y >= self.height or self.track[check_y, check_x] == 0):
                 return distance / 100.0
         return 1.0
 
@@ -61,29 +78,8 @@ class TrackEnv(gym.Env):
         radars = [self._get_radar_distance(a) for a in radar_angles]
         return np.array(radars + [self.car_speed / self.max_speed], dtype=np.float32)
 
-st.set_page_config(layout="wide")
-
-# Force Dark UI Theme using CSS
-st.markdown(
-    """<style>
-.stApp {
-    background-color: #0E1117;
-    color: #FAFAFA;
-}
-div[data-testid="stExpander"] {
-    background-color: #161B22;
-    border: 1px solid #30363D;
-    border-radius: 8px;
-}
-div[data-testid="stSidebar"] {
-    background-color: #161B22;
-}
-</style>""",
-    unsafe_allow_html=True
-)
 
 st.title("🏎️ Autonomous Car RL Playground (Streamlit Dark)")
-
 st.sidebar.header("1. Define Track")
 uploaded_file = st.sidebar.file_uploader("Upload track layout (white track, black background)", type=["png", "jpg", "jpeg"])
 
@@ -92,11 +88,9 @@ steps = st.sidebar.slider("Total Timesteps", 5000, 100000, 20000, 5000)
 lr = st.sidebar.number_input("Learning Rate", value=0.0003, format="%.5f")
 net_arch = st.sidebar.text_input("Policy Network Layers", "64, 64")
 
-# Load Weights Option
 has_existing_model = os.path.exists("custom_model.zip")
 load_saved_weights = st.sidebar.checkbox("Resume training from previously saved model weights", value=False, disabled=not has_existing_model)
 
-# Dedicated Reward Tuning Section
 with st.sidebar.expander("🏆 Reward Tuning", expanded=True):
     crash_penalty = st.slider("Crash Penalty", -50.0, 0.0, -15.0)
     center_weight = st.slider("Centerline Follow Reward", 0.0, 5.0, 1.5)
@@ -105,6 +99,7 @@ with st.sidebar.expander("🏆 Reward Tuning", expanded=True):
 
 if st.sidebar.button("Train Model & Generate Simulation", type="primary"):
     with st.spinner("Running training configuration... "):
+        # Track creation logic
         if uploaded_file is not None:
             file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
             img = cv2.imdecode(file_bytes, cv2.IMREAD_GRAYSCALE)
@@ -125,27 +120,27 @@ if st.sidebar.button("Train Model & Generate Simulation", type="primary"):
                     self.car_speed += self.acceleration_factor
                 elif action == 3:
                     self.car_speed -= self.braking_factor
-
+                
                 self.car_speed -= self.friction_factor
                 self.car_speed = max(0.0, min(self.max_speed, self.car_speed))
+                
                 self.car_x += math.cos(self.car_angle) * self.car_speed
                 self.car_y += math.sin(self.car_angle) * self.car_speed
-
+                
                 terminated = False
                 reward = 0.1
                 x_int, y_int = int(self.car_x), int(self.car_y)
+                
                 center_x = self.width / 2
                 center_y = self.height / 2
                 distance_from_center = math.sqrt((x_int - center_x)**2 + (y_int - center_y)**2)
                 max_possible_distance = math.sqrt(center_x**2 + center_y**2)
                 normalized_distance = distance_from_center / max_possible_distance if max_possible_distance > 0 else 0
-
+                
                 reward += (1 - normalized_distance) * center_weight
                 reward += self.car_speed * speed_weight
-
-                if (x_int < 0 or x_int >= self.width or
-                    y_int < 0 or y_int >= self.height or
-                    self.track[y_int, x_int] == 0):
+                
+                if (x_int < 0 or x_int >= self.width or y_int < 0 or y_int >= self.height or self.track[y_int, x_int] == 0):
                     terminated = True
                     reward = crash_penalty
                 else:
@@ -154,34 +149,36 @@ if st.sidebar.button("Train Model & Generate Simulation", type="primary"):
                         reward -= revisit_penalty
                     else:
                         self.visited_cells.add(current_cell)
+                        
                 return self._get_obs(), reward, terminated, False, {}
 
         custom_env = CustomizableTrackEnv(track_path='custom_track.png')
         layers = [int(x.strip()) for x in net_arch.split(',')]
-
+        
         if load_saved_weights and has_existing_model:
             shutil.unpack_archive("custom_model.zip", ".", "zip")
             ppo_model = PPO.load("custom_model", env=custom_env, learning_rate=float(lr))
             st.info("Loaded existing model weights. Continuing training on new track...")
         else:
             ppo_model = PPO(
-                "MlpPolicy",
-                custom_env,
-                verbose=0,
-                learning_rate=float(lr),
+                "MlpPolicy", custom_env, verbose=0, learning_rate=float(lr),
                 policy_kwargs=dict(net_arch=dict(pi=layers, vf=layers))
             )
             st.info("Starting fresh training session...")
-
+            
         ppo_model.learn(total_timesteps=int(steps))
         ppo_model.save("custom_model")
+        
+        # Fixed archiving logic (Zipping explicitly only what's needed)
+        if os.path.exists("custom_model.zip"):
+            os.remove("custom_model.zip")
         shutil.make_archive("custom_model", 'zip', '.', "custom_model.zip")
-
+        
         obs, _ = custom_env.reset()
         base_track_img = cv2.imread('custom_track.png')
         if len(base_track_img.shape) == 2:
             base_track_img = cv2.cvtColor(base_track_img, cv2.COLOR_GRAY2BGR)
-
+            
         frames = []
         for _ in range(500):
             action, _ = ppo_model.predict(obs, deterministic=True)
@@ -191,10 +188,10 @@ if st.sidebar.button("Train Model & Generate Simulation", type="primary"):
             frames.append(frame)
             if terminated:
                 break
-
+                
         imageio.mimsave("custom_simulation.mp4", frames, fps=20)
         st.success("Training Complete!")
-
+        
         col1, col2 = st.columns(2)
         with col1:
             st.subheader("Simulation Run")
