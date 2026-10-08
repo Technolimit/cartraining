@@ -62,7 +62,7 @@ class TrackEnv(gym.Env):
         return np.array(radars + [self.car_speed / self.max_speed], dtype=np.float32)
 
 st.set_page_config(layout="wide")
-st.title("🏎️ Autonomous Car Playground")
+st.title("🏎️ Autonomous Car RL Playground (Streamlit)")
 
 st.sidebar.header("1. Define Track")
 uploaded_file = st.sidebar.file_uploader("Upload track layout (white track, black background)", type=["png", "jpg", "jpeg"])
