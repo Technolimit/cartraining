@@ -5,3 +5,5 @@ opencv-python-headless
 imageio
 imageio-ffmpeg
 numpy
+libgl1-mesa-glx
+libglib2.0-0
