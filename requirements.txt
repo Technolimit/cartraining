@@ -1,0 +1,7 @@
+streamlit
+gymnasium
+stable-baselines3[extra]
+opencv-python-headless
+imageio
+imageio-ffmpeg
+numpy
