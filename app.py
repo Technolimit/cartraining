@@ -62,24 +62,49 @@ class TrackEnv(gym.Env):
         return np.array(radars + [self.car_speed / self.max_speed], dtype=np.float32)
 
 st.set_page_config(layout="wide")
-st.title("🏎️ Autonomous Car RL Playground (Streamlit)")
+
+# Force Dark UI Theme using CSS
+st.markdown(
+    """<style>
+.stApp {
+    background-color: #0E1117;
+    color: #FAFAFA;
+}
+div[data-testid="stExpander"] {
+    background-color: #161B22;
+    border: 1px solid #30363D;
+    border-radius: 8px;
+}
+div[data-testid="stSidebar"] {
+    background-color: #161B22;
+}
+</style>""",
+    unsafe_allow_html=True
+)
+
+st.title("🏎️ Autonomous Car RL Playground (Streamlit Dark)")
 
 st.sidebar.header("1. Define Track")
 uploaded_file = st.sidebar.file_uploader("Upload track layout (white track, black background)", type=["png", "jpg", "jpeg"])
 
-st.sidebar.header("2. Model Architecture")
+st.sidebar.header("2. Model Settings")
 steps = st.sidebar.slider("Total Timesteps", 5000, 100000, 20000, 5000)
 lr = st.sidebar.number_input("Learning Rate", value=0.0003, format="%.5f")
 net_arch = st.sidebar.text_input("Policy Network Layers", "64, 64")
 
-st.sidebar.header("3. Reward Weights")
-crash_penalty = st.sidebar.slider("Crash Penalty", -50.0, 0.0, -15.0)
-center_weight = st.sidebar.slider("Centerline Follow Reward", 0.0, 5.0, 1.5)
-speed_weight = st.sidebar.slider("Speed Incentive", 0.0, 2.0, 0.3)
-revisit_penalty = st.sidebar.slider("Revisitation Penalty", 0.0, 2.0, 0.5)
+# Load Weights Option
+has_existing_model = os.path.exists("custom_model.zip")
+load_saved_weights = st.sidebar.checkbox("Resume training from previously saved model weights", value=False, disabled=not has_existing_model)
+
+# Dedicated Reward Tuning Section
+with st.sidebar.expander("🏆 Reward Tuning", expanded=True):
+    crash_penalty = st.slider("Crash Penalty", -50.0, 0.0, -15.0)
+    center_weight = st.slider("Centerline Follow Reward", 0.0, 5.0, 1.5)
+    speed_weight = st.slider("Speed Incentive", 0.0, 2.0, 0.3)
+    revisit_penalty = st.slider("Revisitation Penalty", 0.0, 2.0, 0.5)
 
 if st.sidebar.button("Train Model & Generate Simulation", type="primary"):
-    with st.spinner("Training RL Model (this might take a minute)... "):
+    with st.spinner("Running training configuration... "):
         if uploaded_file is not None:
             file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
             img = cv2.imdecode(file_bytes, cv2.IMREAD_GRAYSCALE)
@@ -133,24 +158,30 @@ if st.sidebar.button("Train Model & Generate Simulation", type="primary"):
 
         custom_env = CustomizableTrackEnv(track_path='custom_track.png')
         layers = [int(x.strip()) for x in net_arch.split(',')]
-        
-        ppo_model = PPO(
-            "MlpPolicy",
-            custom_env,
-            verbose=0,
-            learning_rate=float(lr),
-            policy_kwargs=dict(net_arch=dict(pi=layers, vf=layers))
-        )
+
+        if load_saved_weights and has_existing_model:
+            shutil.unpack_archive("custom_model.zip", ".", "zip")
+            ppo_model = PPO.load("custom_model", env=custom_env, learning_rate=float(lr))
+            st.info("Loaded existing model weights. Continuing training on new track...")
+        else:
+            ppo_model = PPO(
+                "MlpPolicy",
+                custom_env,
+                verbose=0,
+                learning_rate=float(lr),
+                policy_kwargs=dict(net_arch=dict(pi=layers, vf=layers))
+            )
+            st.info("Starting fresh training session...")
+
         ppo_model.learn(total_timesteps=int(steps))
         ppo_model.save("custom_model")
-        
         shutil.make_archive("custom_model", 'zip', '.', "custom_model.zip")
 
         obs, _ = custom_env.reset()
         base_track_img = cv2.imread('custom_track.png')
         if len(base_track_img.shape) == 2:
             base_track_img = cv2.cvtColor(base_track_img, cv2.COLOR_GRAY2BGR)
-            
+
         frames = []
         for _ in range(500):
             action, _ = ppo_model.predict(obs, deterministic=True)
@@ -160,10 +191,10 @@ if st.sidebar.button("Train Model & Generate Simulation", type="primary"):
             frames.append(frame)
             if terminated:
                 break
-                
+
         imageio.mimsave("custom_simulation.mp4", frames, fps=20)
         st.success("Training Complete!")
-        
+
         col1, col2 = st.columns(2)
         with col1:
             st.subheader("Simulation Run")
