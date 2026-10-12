@@ -178,7 +178,7 @@ with col_left:
     )
 
 with col_right:
-    st.markdown(\"<div class='card'><h3>⚙️ Model Settings</h3></div>\", unsafe_allow_html=True)
+    st.html('<div class="card"><h3>⚙️ Model Settings</h3></div>')
     steps = st.slider("Total Timesteps", 5000, 100000, 20000, 5000)
     lr = st.number_input("Learning Rate", value=0.0003, format="%.5f")
     net_arch = st.text_input("Policy Network Layers", "64, 64")
