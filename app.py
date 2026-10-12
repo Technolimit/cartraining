@@ -163,6 +163,7 @@ with col_left:
     
     brush_width = st.slider("Brush Width", 10, 80, 25)
     
+    # FIXED: Added return_image_data=True to enable image_data property access
     canvas_result = st_canvas(
         fill_color="#FFFFFF",
         stroke_width=brush_width,
@@ -171,6 +172,7 @@ with col_left:
         height=400,
         width=400,
         drawing_mode="freedraw",
+        return_image_data=True,
         key="canvas",
     )
 
