@@ -38,7 +38,7 @@ div[data-testid="stSidebar"] {
     unsafe_allow_html=True
 )
 
-# 2. ORIGINAL ENVIRONMENT CLASS FROM NOTEBOOK
+# 2. ENVIRONMENT CLASSES
 class TrackEnv(gym.Env):
     def __init__(self, track_path='custom_track.png'):
         super(TrackEnv, self).__init__()
@@ -152,19 +152,17 @@ col_left, col_right = st.columns([1.2, 1])
 
 with col_left:
     st.markdown(
-    """
-    <div class="card">
-        <h3>🎨 Draw Your Custom Track</h3>
-        <p>Use the white brush below to draw a path over the black track background.</p>
-    </div>
-    """,
-    unsafe_allow_html=True,
+        """
+        <div class="card">
+            <h3>🎨 Draw Your Custom Track</h3>
+            <p>Use the white brush below to draw a path over the black track background.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
     
-    # Brush settings
     brush_width = st.slider("Brush Width", 10, 80, 25)
     
-    # Drawable Canvas integration
     canvas_result = st_canvas(
         fill_color="#FFFFFF",
         stroke_width=brush_width,
@@ -193,7 +191,6 @@ with col_right:
 
 if st.button("Train Model & Generate Simulation", type="primary"):
     with st.spinner("Running training configuration..."):
-        # Track creation logic from canvas
         if canvas_result.image_data is not None:
             img_rgba = canvas_result.image_data.astype(np.uint8)
             img_gray = cv2.cvtColor(img_rgba, cv2.COLOR_RGBA2GRAY)
@@ -225,11 +222,8 @@ if st.button("Train Model & Generate Simulation", type="primary"):
             st.info("Starting fresh training session...")
 
         ppo_model.learn(total_timesteps=int(steps))
-
-        # Save model directly as a zip file using Stable-Baselines3 built-in method
         ppo_model.save("custom_model.zip")
 
-        # SIMULATION & CAR ANGLE RENDERING PIPELINE
         obs, _ = custom_env.reset()
         base_track_img = cv2.imread('custom_track.png')
         if base_track_img is not None and len(base_track_img.shape) == 2:
@@ -279,7 +273,6 @@ if st.button("Train Model & Generate Simulation", type="primary"):
         imageio.mimsave("custom_simulation.mp4", frames, fps=20)
         st.success("Training Complete!")
 
-# Persist display components layout
 if os.path.exists("custom_simulation.mp4"):
     col_video, col_download = st.columns(2)
     with col_video:
