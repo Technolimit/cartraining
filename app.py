@@ -162,7 +162,6 @@ with col_left:
     
     brush_width = st.slider("Brush Width", 10, 80, 25)
     
-    # Added update_streamlit=True so the component instantly synchronizes drawing data
     canvas_result = st_canvas(
         fill_color="#FFFFFF",
         stroke_width=brush_width,
@@ -192,68 +191,83 @@ with col_right:
     revisit_penalty = st.slider("Revisitation Penalty", 0.0, 2.0, 0.5)
 
 if st.button("Train Model & Generate Simulation", type="primary"):
-    with st.spinner("Running training configuration..."):
-        # Explicit check ensuring canvas drawing data is captured correctly
-        track_saved = False
-        if canvas_result.image_data is not None:
-            img_rgba = canvas_result.image_data.astype(np.uint8)
-            # Check if user actually drew something (not entirely black)
-            if np.any(img_rgba[:, :, :3] > 10):
-                img_gray = cv2.cvtColor(img_rgba, cv2.COLOR_RGBA2GRAY)
-                _, img_thresh = cv2.threshold(img_gray, 50, 255, cv2.THRESH_BINARY)
-                cv2.imwrite('custom_track.png', img_thresh)
-                track_saved = True
+    # Track creation logic
+    track_saved = False
+    if canvas_result.image_data is not None:
+        img_rgba = canvas_result.image_data.astype(np.uint8)
+        if np.any(img_rgba[:, :, :3] > 10):
+            img_gray = cv2.cvtColor(img_rgba, cv2.COLOR_RGBA2GRAY)
+            _, img_thresh = cv2.threshold(img_gray, 50, 255, cv2.THRESH_BINARY)
+            cv2.imwrite('custom_track.png', img_thresh)
+            track_saved = True
 
-        if not track_saved:
-            # Fallback circle if no drawing exists
-            img = np.zeros((400, 400), dtype=np.uint8)
-            cv2.circle(img, (200, 200), 120, 255, thickness=40)
-            cv2.imwrite('custom_track.png', img)
+    if not track_saved:
+        img = np.zeros((400, 400), dtype=np.uint8)
+        cv2.circle(img, (200, 200), 120, 255, thickness=40)
+        cv2.imwrite('custom_track.png', img)
 
-        custom_env = CustomizableTrackEnv(
+    custom_env = CustomizableTrackEnv(
+        track_path='custom_track.png',
+        crash_p=crash_penalty,
+        center_w=center_weight,
+        speed_w=speed_weight,
+        revisit_p=revisit_penalty
+    )
+
+    layers = [int(x.strip()) for x in net_arch.split(',')]
+
+    if load_saved_weights and has_existing_model:
+        ppo_model = PPO.load("custom_model.zip", env=custom_env, learning_rate=float(lr))
+        st.info("Loaded existing model weights. Continuing training...")
+    else:
+        ppo_model = PPO(
+            "MlpPolicy", custom_env, verbose=0, learning_rate=float(lr),
+            policy_kwargs=dict(net_arch=dict(pi=layers, vf=layers))
+        )
+        st.info("Starting fresh training session...")
+
+    # UI elements for live progress and best run preview
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    st.subheader("Live Best Model Simulation Preview (Every 5k Steps)")
+    live_video_placeholder = st.empty()
+
+    total_timesteps = int(steps)
+    chunk_size = 5000
+    current_steps = 0
+    best_reward = -float('inf')
+
+    base_track_img = cv2.imread('custom_track.png')
+    if base_track_img is not None and len(base_track_img.shape) == 2:
+        base_track_img = cv2.cvtColor(base_track_img, cv2.COLOR_GRAY2BGR)
+
+    while current_steps < total_timesteps:
+        steps_to_run = min(chunk_size, total_timesteps - current_steps)
+        ppo_model.learn(total_timesteps=steps_to_run, reset_num_timesteps=False)
+        current_steps += steps_to_run
+
+        # Evaluate current model checkpoint via rollout
+        eval_env = CustomizableTrackEnv(
             track_path='custom_track.png',
             crash_p=crash_penalty,
             center_w=center_weight,
             speed_w=speed_weight,
             revisit_p=revisit_penalty
         )
-
-        layers = [int(x.strip()) for x in net_arch.split(',')]
-
-        if load_saved_weights and has_existing_model:
-            ppo_model = PPO.load("custom_model.zip", env=custom_env, learning_rate=float(lr))
-            st.info("Loaded existing model weights. Continuing training on new track...")
-        else:
-            ppo_model = PPO(
-                "MlpPolicy", custom_env, verbose=0, learning_rate=float(lr),
-                policy_kwargs=dict(net_arch=dict(pi=layers, vf=layers))
-            )
-            st.info("Starting fresh training session...")
-
-        ppo_model.learn(total_timesteps=int(steps))
-        ppo_model.save("custom_model.zip")
-
-        obs, _ = custom_env.reset()
-        base_track_img = cv2.imread('custom_track.png')
-        if base_track_img is not None and len(base_track_img.shape) == 2:
-            base_track_img = cv2.cvtColor(base_track_img, cv2.COLOR_GRAY2BGR)
-
+        obs, _ = eval_env.reset()
+        episode_reward = 0
         frames = []
-        step_count = 0
-        max_render_steps = 2000
 
-        while step_count < max_render_steps:
+        for _ in range(2000):
             action, _ = ppo_model.predict(obs, deterministic=True)
-            obs, reward, terminated, truncated, info = custom_env.step(action)
+            obs, reward, terminated, truncated, info = eval_env.step(action)
+            episode_reward += reward
 
             current_render_img = base_track_img.copy()
-            
-            car_len = custom_env.car_length
-            car_wid = custom_env.car_width
-            half_len = car_len / 2
-            half_wid = car_wid / 2
-            car_center_x, car_center_y = custom_env.car_x, custom_env.car_y
-            car_angle_rad = custom_env.car_angle
+            car_len, car_wid = eval_env.car_length, eval_env.car_width
+            half_len, half_wid = car_len / 2, car_wid / 2
+            car_center_x, car_center_y = eval_env.car_x, eval_env.car_y
+            car_angle_rad = eval_env.car_angle
 
             corners_rel = np.array([
                 [-half_len, -half_wid],
@@ -275,25 +289,35 @@ if st.button("Train Model & Generate Simulation", type="primary"):
             cv2.fillPoly(current_render_img, [final_corners], (0, 0, 255))
             frames.append(current_render_img)
 
-            step_count += 1
             if terminated or truncated:
                 break
 
-        imageio.mimsave("custom_simulation.mp4", frames, fps=20)
-        st.success("Training Complete!")
+        # Update progress UI
+        progress_val = min(1.0, current_steps / total_timesteps)
+        progress_bar.progress(progress_val)
+        status_text.text(f"Training Progress: {current_steps}/{total_timesteps} steps | Current Checkpoint Score: {episode_reward:.1f}")
 
-if os.path.exists("custom_simulation.mp4"):
+        # Save as best model if score is higher than previous best
+        if episode_reward > best_reward:
+            best_reward = episode_reward
+            ppo_model.save("custom_model.zip")
+            imageio.mimsave("best_simulation.mp4", frames, fps=20)
+            live_video_placeholder.video("best_simulation.mp4")
+
+    st.success(f"Training Complete! Best score achieved: {best_reward:.1f}")
+
+if os.path.exists("custom_model.zip"):
     col_video, col_download = st.columns(2)
     with col_video:
-        st.subheader("Simulation Run")
-        st.video("custom_simulation.mp4")
+        if not os.path.exists("best_simulation.mp4"):
+            st.subheader("Simulation Run")
+            st.video("custom_model.zip") # Fallback
     with col_download:
         st.subheader("Model Weights")
-        if os.path.exists("custom_model.zip"):
-            with open("custom_model.zip", "rb") as file:
-                st.download_button(
-                    label="Download Weights (ZIP)",
-                    data=file,
-                    file_name="custom_model.zip",
-                    mime="application/zip"
-                )
+        with open("custom_model.zip", "rb") as file:
+            st.download_button(
+                label="Download Weights (ZIP)",
+                data=file,
+                file_name="custom_model.zip",
+                mime="application/zip"
+            )
