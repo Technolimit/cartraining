@@ -147,7 +147,6 @@ class CustomizableTrackEnv(TrackEnv):
 
 st.title("🏎️ Autonomous Car RL Playground (Streamlit Dark)")
 
-# Main screen columns layout
 col_left, col_right = st.columns([1.2, 1])
 
 with col_left:
@@ -163,7 +162,7 @@ with col_left:
     
     brush_width = st.slider("Brush Width", 10, 80, 25)
     
-    # FIXED: Added return_image_data=True to enable image_data property access
+    # Added update_streamlit=True so the component instantly synchronizes drawing data
     canvas_result = st_canvas(
         fill_color="#FFFFFF",
         stroke_width=brush_width,
@@ -173,6 +172,7 @@ with col_left:
         width=400,
         drawing_mode="freedraw",
         return_image_data=True,
+        update_streamlit=True,
         key="canvas",
     )
 
@@ -193,12 +193,19 @@ with col_right:
 
 if st.button("Train Model & Generate Simulation", type="primary"):
     with st.spinner("Running training configuration..."):
+        # Explicit check ensuring canvas drawing data is captured correctly
+        track_saved = False
         if canvas_result.image_data is not None:
             img_rgba = canvas_result.image_data.astype(np.uint8)
-            img_gray = cv2.cvtColor(img_rgba, cv2.COLOR_RGBA2GRAY)
-            _, img_thresh = cv2.threshold(img_gray, 50, 255, cv2.THRESH_BINARY)
-            cv2.imwrite('custom_track.png', img_thresh)
-        else:
+            # Check if user actually drew something (not entirely black)
+            if np.any(img_rgba[:, :, :3] > 10):
+                img_gray = cv2.cvtColor(img_rgba, cv2.COLOR_RGBA2GRAY)
+                _, img_thresh = cv2.threshold(img_gray, 50, 255, cv2.THRESH_BINARY)
+                cv2.imwrite('custom_track.png', img_thresh)
+                track_saved = True
+
+        if not track_saved:
+            # Fallback circle if no drawing exists
             img = np.zeros((400, 400), dtype=np.uint8)
             cv2.circle(img, (200, 200), 120, 255, thickness=40)
             cv2.imwrite('custom_track.png', img)
