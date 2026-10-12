@@ -226,11 +226,16 @@ if st.button("Train Model & Generate Simulation", type="primary"):
         )
         st.info("Starting fresh training session...")
 
-    # UI elements for live progress and best run preview
+    # UI elements for live progress
     progress_bar = st.progress(0)
     status_text = st.empty()
+    
     st.subheader("Live Best Model Simulation Preview (Every 5k Steps)")
-    live_video_placeholder = st.empty()
+    
+    # Wrapped in narrower centered columns to make the video smaller
+    v_col1, v_col2, v_col3 = st.columns([1, 2, 1])
+    with v_col2:
+        live_video_placeholder = st.empty()
 
     total_timesteps = int(steps)
     chunk_size = 5000
@@ -295,23 +300,23 @@ if st.button("Train Model & Generate Simulation", type="primary"):
         # Update progress UI
         progress_val = min(1.0, current_steps / total_timesteps)
         progress_bar.progress(progress_val)
-        status_text.text(f"Training Progress: {current_steps}/{total_timesteps} steps | Current Checkpoint Score: {episode_reward:.1f}")
+        status_text.text(f"Training Progress: {current_steps}/{total_timesteps} steps | Checkpoint Score: {episode_reward:.1f}")
 
-        # Save as best model if score is higher than previous best
+        # Save as best model and force instant refresh using unique checkpoint filenames
         if episode_reward > best_reward:
             best_reward = episode_reward
             ppo_model.save("custom_model.zip")
-            imageio.mimsave("best_simulation.mp4", frames, fps=20)
-            live_video_placeholder.video("best_simulation.mp4")
+            
+            sim_filename = f"sim_step_{current_steps}.mp4"
+            imageio.mimsave(sim_filename, frames, fps=20)
+            
+            with v_col2:
+                live_video_placeholder.video(sim_filename)
 
     st.success(f"Training Complete! Best score achieved: {best_reward:.1f}")
 
 if os.path.exists("custom_model.zip"):
     col_video, col_download = st.columns(2)
-    with col_video:
-        if not os.path.exists("best_simulation.mp4"):
-            st.subheader("Simulation Run")
-            st.video("custom_model.zip") # Fallback
     with col_download:
         st.subheader("Model Weights")
         with open("custom_model.zip", "rb") as file:
