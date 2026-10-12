@@ -8,7 +8,6 @@ from gymnasium import spaces
 from stable_baselines3 import PPO
 import streamlit as st
 from streamlit_drawable_canvas import st_canvas
-import shutil
 
 # 1. MUST BE FIRST STREAMLIT COMMAND
 st.set_page_config(layout="wide")
@@ -160,7 +159,7 @@ with col_left:
     </div>
     """,
     unsafe_allow_html=True,
-)
+    )
     
     # Brush settings
     brush_width = st.slider("Brush Width", 10, 80, 25)
@@ -178,7 +177,7 @@ with col_left:
     )
 
 with col_right:
-    st.html('<div class="card"><h3>⚙️ Model Settings</h3></div>')
+    st.markdown('<div class="card"><h3>⚙️ Model Settings</h3></div>', unsafe_allow_html=True)
     steps = st.slider("Total Timesteps", 5000, 100000, 20000, 5000)
     lr = st.number_input("Learning Rate", value=0.0003, format="%.5f")
     net_arch = st.text_input("Policy Network Layers", "64, 64")
@@ -196,10 +195,8 @@ if st.button("Train Model & Generate Simulation", type="primary"):
     with st.spinner("Running training configuration..."):
         # Track creation logic from canvas
         if canvas_result.image_data is not None:
-            # Convert RGBA to Grayscale
             img_rgba = canvas_result.image_data.astype(np.uint8)
             img_gray = cv2.cvtColor(img_rgba, cv2.COLOR_RGBA2GRAY)
-            # Ensure clean binary image
             _, img_thresh = cv2.threshold(img_gray, 50, 255, cv2.THRESH_BINARY)
             cv2.imwrite('custom_track.png', img_thresh)
         else:
@@ -218,8 +215,7 @@ if st.button("Train Model & Generate Simulation", type="primary"):
         layers = [int(x.strip()) for x in net_arch.split(',')]
 
         if load_saved_weights and has_existing_model:
-            shutil.unpack_archive("custom_model.zip", "extracted_model", "zip")
-            ppo_model = PPO.load("extracted_model/custom_model", env=custom_env, learning_rate=float(lr))
+            ppo_model = PPO.load("custom_model.zip", env=custom_env, learning_rate=float(lr))
             st.info("Loaded existing model weights. Continuing training on new track...")
         else:
             ppo_model = PPO(
@@ -230,19 +226,10 @@ if st.button("Train Model & Generate Simulation", type="primary"):
 
         ppo_model.learn(total_timesteps=int(steps))
 
-        # Save model inside a dedicated folder before archiving
-        os.makedirs("model_dir", exist_ok=True)
-        ppo_model.save("model_dir/custom_model")
+        # Save model directly as a zip file using Stable-Baselines3 built-in method
+        ppo_model.save("custom_model.zip")
 
-        if os.path.exists("custom_model.zip"):
-            os.remove("custom_model.zip")
-        shutil.make_archive("custom_model", 'zip', "model_dir")
-
-        # Clean up temporary directories
-        shutil.rmtree("model_dir", ignore_errors=True)
-        shutil.rmtree("extracted_model", ignore_errors=True)
-
-        # ORIGINAL DETAILED SIMULATION & CAR ANGLE RENDERING PIPELINE
+        # SIMULATION & CAR ANGLE RENDERING PIPELINE
         obs, _ = custom_env.reset()
         base_track_img = cv2.imread('custom_track.png')
         if base_track_img is not None and len(base_track_img.shape) == 2:
@@ -258,7 +245,6 @@ if st.button("Train Model & Generate Simulation", type="primary"):
 
             current_render_img = base_track_img.copy()
             
-            # Accurate corner-math from the notebook to render a properly rotated car
             car_len = custom_env.car_length
             car_wid = custom_env.car_width
             half_len = car_len / 2
@@ -283,7 +269,7 @@ if st.button("Train Model & Generate Simulation", type="primary"):
             rotated_corners = np.dot(corners_rel, rotation_matrix.T)
             final_corners = (rotated_corners + np.array([car_center_x, car_center_y])).astype(int)
 
-            cv2.fillPoly(current_render_img, [final_corners], (0, 0, 255)) # Draw original blue/red car
+            cv2.fillPoly(current_render_img, [final_corners], (0, 0, 255))
             frames.append(current_render_img)
 
             step_count += 1
