@@ -152,7 +152,15 @@ st.title("🏎️ Autonomous Car RL Playground (Streamlit Dark)")
 col_left, col_right = st.columns([1.2, 1])
 
 with col_left:
-    st.markdown(\"<div class='card'><h3>🎨 Draw Your Custom Track</h3><p>Use the white brush below to draw a path over the black track background.</p></div>\", unsafe_allow_html=True)
+    st.markdown(
+    """
+    <div class="card">
+        <h3>🎨 Draw Your Custom Track</h3>
+        <p>Use the white brush below to draw a path over the black track background.</p>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
     
     # Brush settings
     brush_width = st.slider("Brush Width", 10, 80, 25)
