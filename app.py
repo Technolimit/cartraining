@@ -186,7 +186,7 @@ with col_right:
     has_existing_model = os.path.exists("custom_model.zip")
     load_saved_weights = st.checkbox("Resume training from previously saved model weights", value=False, disabled=not has_existing_model)
 
-    st.markdown(\"<div class='card'><h3>🏆 Customize Reward Weights</h3></div>\", unsafe_allow_html=True)
+    st.markdown('<div class="card"><h3>🏆 Customize Reward Weights</h3></div>', unsafe_allow_html=True)
     crash_penalty = st.slider("Crash Penalty (Negative)", -50.0, 0.0, -15.0)
     center_weight = st.slider("Centerline Follow Reward", 0.0, 5.0, 1.5)
     speed_weight = st.slider("Speed Incentive", 0.0, 2.0, 0.3)
