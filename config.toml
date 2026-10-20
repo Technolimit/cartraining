@@ -1,11 +1,13 @@
+[server]
+# Increases upload limit if you handle larger assets or model files (default is 200MB)
+maxUploadSize = 500
+headless = true
+
 [theme]
+# Matches the dark, sleek UI theme defined in your script's custom CSS
 base = "dark"
 primaryColor = "#4C8DFF"
 backgroundColor = "#08090B"
 secondaryBackgroundColor = "#0F1114"
 textColor = "#E4E6EA"
 font = "sans serif"
- 
-[client]
-toolbarMode = "minimal"
- 
